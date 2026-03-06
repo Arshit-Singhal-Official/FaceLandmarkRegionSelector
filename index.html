@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>MediaPipe Face Mesh Picker</title>
+
+<style>
+
+body{
+background:#111;
+color:white;
+font-family:system-ui;
+text-align:center;
+}
+
+canvas{
+border:1px solid #333;
+margin-top:20px;
+}
+
+textarea{
+width:600px;
+height:70px;
+background:black;
+color:#0f0;
+border:1px solid #333;
+margin-top:10px;
+}
+
+button{
+margin:5px;
+padding:6px 12px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h2>MediaPipe Face Mesh Landmark Picker</h2>
+
+<input type="file" id="upload">
+
+<br>
+
+<canvas id="canvas" width="640" height="640"></canvas>
+
+<br>
+
+Indices
+<br>
+<textarea id="indices"></textarea>
+
+<br>
+
+Connections
+<br>
+<textarea id="tuples"></textarea>
+
+<br>
+
+<button onclick="reset()">Reset</button>
+<button onclick="copyIndices()">Copy Indices</button>
+<button onclick="copyTuples()">Copy Tuples</button>
+<button onclick="toggleLabels()">Toggle Labels</button>
+<button onclick="toggleMesh()">Toggle Mesh</button>
+
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+<script>
+
+const canvas = document.getElementById("canvas")
+const ctx = canvas.getContext("2d")
+
+let landmarks = []
+let selected = []
+let loadedImage = null
+
+let showLabels = false
+let showMesh = false
+
+
+const FACEMESH_TESSELATION = [
+
+[127,34],[34,139],[139,127],
+[11,0],[0,37],[37,11],
+[232,231],[231,120],[120,232],
+[72,37],[37,39],[39,72],
+[128,121],[121,47],[47,128],
+[104,69],[69,67],[67,104],
+[175,171],[171,148],[148,175],
+[118,50],[50,101],[101,118],
+[73,39],[39,40],[40,73]
+
+]
+
+
+function distance(a,b){
+
+return Math.hypot(a.x-b.x,a.y-b.y)
+
+}
+
+
+
+function draw(){
+
+ctx.clearRect(0,0,canvas.width,canvas.height)
+
+if(loadedImage){
+ctx.drawImage(loadedImage,0,0,canvas.width,canvas.height)
+}
+
+
+if(showMesh){
+
+FACEMESH_TESSELATION.forEach(([a,b])=>{
+
+if(!landmarks[a] || !landmarks[b]) return
+
+ctx.beginPath()
+ctx.moveTo(landmarks[a].x,landmarks[a].y)
+ctx.lineTo(landmarks[b].x,landmarks[b].y)
+ctx.strokeStyle="rgba(0,255,255,0.4)"
+ctx.stroke()
+
+})
+
+}
+
+
+
+landmarks.forEach((p,i)=>{
+
+ctx.beginPath()
+ctx.arc(p.x,p.y,3,0,Math.PI*2)
+
+ctx.fillStyle = selected.includes(i) ? "red":"white"
+ctx.fill()
+
+
+if(showLabels){
+
+ctx.fillStyle="yellow"
+ctx.font="10px monospace"
+ctx.fillText(i,p.x+4,p.y+4)
+
+}
+
+})
+
+}
+
+
+
+canvas.onclick = e=>{
+
+const rect = canvas.getBoundingClientRect()
+
+const click={
+
+x:e.clientX-rect.left,
+y:e.clientY-rect.top
+
+}
+
+let closest=-1
+let d=Infinity
+
+landmarks.forEach((p,i)=>{
+
+let dist=distance(p,click)
+
+if(dist<d){
+
+d=dist
+closest=i
+
+}
+
+})
+
+
+selected.push(closest)
+
+updateOutput()
+draw()
+
+}
+
+
+
+function updateOutput(){
+
+document.getElementById("indices").value =
+"["+selected.join(",")+"]"
+
+
+let tuples=[]
+
+for(let i=0;i<selected.length-1;i++){
+
+tuples.push(`(${selected[i]},${selected[i+1]})`)
+
+}
+
+document.getElementById("tuples").value =
+"["+tuples.join(",")+"]"
+
+}
+
+
+
+function reset(){
+
+selected=[]
+updateOutput()
+draw()
+
+}
+
+
+
+function copyIndices(){
+
+navigator.clipboard.writeText(
+document.getElementById("indices").value
+)
+
+}
+
+
+
+function copyTuples(){
+
+navigator.clipboard.writeText(
+document.getElementById("tuples").value
+)
+
+}
+
+
+
+function toggleLabels(){
+
+showLabels=!showLabels
+draw()
+
+}
+
+
+
+function toggleMesh(){
+
+showMesh=!showMesh
+draw()
+
+}
+
+
+
+document.getElementById("upload").onchange = async e=>{
+
+const file = e.target.files[0]
+
+const img = new Image()
+
+img.onload = async ()=>{
+
+loadedImage = img
+
+await runFaceMesh(img)
+
+}
+
+img.src = URL.createObjectURL(file)
+
+}
+
+
+
+async function runFaceMesh(image){
+
+const faceMesh = new FaceMesh({
+
+locateFile: file =>
+`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+
+})
+
+
+faceMesh.setOptions({
+
+maxNumFaces:1,
+refineLandmarks:true,
+minDetectionConfidence:0.5,
+minTrackingConfidence:0.5
+
+})
+
+
+faceMesh.onResults(results=>{
+
+if(!results.multiFaceLandmarks) return
+
+const face = results.multiFaceLandmarks[0]
+
+landmarks = face.map(p=>({
+
+x:p.x * canvas.width,
+y:p.y * canvas.height
+
+}))
+
+
+draw()
+
+})
+
+
+await faceMesh.send({image})
+
+}
+
+
+</script>
+
+</body>
+</html>
